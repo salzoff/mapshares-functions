@@ -28,8 +28,31 @@ exports.addBoxCollectionInGeoCollection = functions.firestore
         const data = snap.data();
         return geoCollection.doc(snap.id).set({
             coordinates: data.position,
+            value: data.value,
             objectType: 2,
             ref: snap.ref
+        });
+    });
+
+exports.updateBoxInGeoCollection = functions.firestore
+    .document('box/{uid}').onUpdate(change => {
+        const data = change.after.data();
+        return geoCollection.doc(change.after.id).update({
+            coordinates: data.position,
+            value: data.value
+        });
+    });
+
+exports.deleteBox = functions.firestore
+    .document('box/{uid}').onDelete(snap => {
+        geoCollection.doc(snap.id).delete();
+        return snap.ref.collection('hints').get().then(querySnapshot => {
+            querySnapshot.forEach(doc => {
+                geoCollection.doc(doc.id + 'hint').delete();
+            });
+            return true;
+        }).catch(err => {
+            console.error(err);
         });
     });
 
