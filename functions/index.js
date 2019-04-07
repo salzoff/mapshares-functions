@@ -5,6 +5,12 @@ const firestore = admin.firestore();
 const GeoFirestore = require('geofirestore').GeoFirestore;
 const geoCollection = new GeoFirestore(firestore).collection('geoLocation');
 const guestRole = firestore.collection('userRoles').doc('0c5dcOJ5B8fLrcPVJ2fS');
+const { Storage } = require('@google-cloud/storage');
+const storage = new Storage();
+const spawn = require('child-process-promise').spawn;
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
 
 let lastCacheUpdate = null;
 // // Create and Deploy Your First Cloud Functions
@@ -79,6 +85,70 @@ exports.markBoxAsFound = functions.https.onCall((data, context) => {
     }).catch(e => {
         console.error(e);
     });
+});
+
+exports.deleteHint = functions.firestore
+    .document('box/{uid}/hints/{id}').onDelete(snap => {
+        return geoCollection.doc(snap.id + 'hint').delete().then(() => {
+            if (snap.data().type === 3) {
+                const fileRef = storage.ref().child('boxHintImages/' + snap.id);
+                return fileRef.delete();
+            }
+            return true;
+       })
+            .catch(e =>  {
+                console.error(e);
+            });
+    });
+
+exports.processImages = functions.storage.object().onFinalize((object) => {
+    let newSize;
+    if (object.name.startsWith('profileImages')) {
+        newSize = '300x300>';
+    } else {
+        newSize = '600x600>';
+    }
+
+    const fileBucket = object.bucket;
+    const bucket = storage.bucket(fileBucket);
+    const fileName = path.basename(object.name);
+    const tempFilePath = path.join(os.tmpdir(), fileName);
+    return bucket.file(object.name).getMetadata().then(metaData => {
+        if (metaData[0].metadata.isProcessed) {
+            return true;
+        } else {
+            return bucket.file(object.name).download({
+                destination: tempFilePath,
+            }).then(() => {
+                return spawn('convert', [tempFilePath, '-auto-orient', tempFilePath]);
+            }).then(() => {
+                return spawn('convert', [tempFilePath, '-thumbnail', newSize, tempFilePath]);
+            })
+                .then(() => {
+                    return bucket.upload(tempFilePath, {
+                        destination: object.name,
+                        metadata: {
+                            contentType: object.contentType,
+                            metadata: { isProcessed: true }
+                        }
+                    })
+                })
+                .then(() => {
+                    fs.unlinkSync(tempFilePath);
+                    return bucket.file(object.name).setMetadata({
+                        metadata: {
+                            isProcessed: true
+                        }
+                    }).catch(e => {
+                        console.error(e);
+                    });
+                });
+        }
+    }).catch(e => {
+        console.error(e);
+    });
+
+
 });
 
 /* exports.addHintInGeoCollection = functions.firestore
