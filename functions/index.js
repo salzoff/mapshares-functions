@@ -35,7 +35,7 @@ exports.addBoxCollectionInGeoCollection = functions.firestore
         return geoCollection.doc(snap.id).set({
             coordinates: data.position,
             value: data.value,
-            objectType: 2,
+            objectType: data.isPhysical ? 3 : 2,
             ref: snap.ref
         });
     });
@@ -45,7 +45,8 @@ exports.updateBoxInGeoCollection = functions.firestore
         const data = change.after.data();
         return geoCollection.doc(change.after.id).update({
             coordinates: data.position,
-            value: data.value
+            value: data.value,
+            objectType: data.foundBy ? 4 : data.isPhysical ? 3 : 2,
         });
     });
 
@@ -63,27 +64,32 @@ exports.deleteBox = functions.firestore
     });
 
 exports.markBoxAsFound = functions.https.onCall((data, context) => {
-    return new Promise(resolve => {
-        return firestore.collection('userProfile').doc(context.auth.uid).get().then(userProfile => {
+    return new Promise((resolve, reject) => {
+        firestore.collection('userProfile').doc(context.auth.uid).get().then(userProfile => {
             return firestore.collection('box').doc(data.id).update({
                 foundBy: userProfile.ref,
                 foundAt: new Date()
             }).then(() => {
                 return geoCollection.doc(data.id).update({ objectType: 4 }).then(() => {
                     return firestore.collection('box').doc(data.id).collection('hints').get().then(hints => {
-                        hints.forEach(hint => {
-                            geoCollection.doc(hint.id + 'hint').delete();
+                        return Promise.all(hints.map(hint => {
+                            return geoCollection.doc(hint.id + 'hint').delete();
+                        })).then(() => {
+                            resolve({ success: true });
+                            return;
                         });
-                        resolve({ success: true });
-                        return;
+                    }).catch(e => {
+                        reject(e);
                     });
+                }).catch(e => {
+                    reject(e);
                 });
             }).catch(e => {
-                console.error(e);
+                reject(e);
             });
+        }).catch(e => {
+            reject(e);
         });
-    }).catch(e => {
-        console.error(e);
     });
 });
 
