@@ -4,7 +4,8 @@ admin.initializeApp();
 const firestore = admin.firestore();
 const GeoFirestore = require('geofirestore').GeoFirestore;
 const geoCollection = new GeoFirestore(firestore).collection('geoLocation');
-const guestRole = firestore.collection('userRoles').doc('0c5dcOJ5B8fLrcPVJ2fS');
+const userCollection = firestore.collection('userProfile');
+const playerRole = firestore.collection('userRoles').doc('rh3NSk8aPOjXVGUYwPjQ');
 const { Storage } = require('@google-cloud/storage');
 const storage = new Storage();
 const spawn = require('child-process-promise').spawn;
@@ -19,15 +20,6 @@ let lastCacheUpdate = null;
 // exports.helloWorld = functions.https.onRequest((request, response) => {
 //  response.send("Hello from Firebase!");
 // });
-
-exports.createUserProfile = functions.firestore
-    .document('userProfile/{uid}').onCreate((snap, context) => {
-        return snap.ref.update({
-            createdAt: new Date(),
-            lastLogin: new Date(),
-            userRole: guestRole
-        });
-    });
 
 exports.addBoxCollectionInGeoCollection = functions.firestore
     .document('box/{uid}').onCreate((snap, context) => {
@@ -63,7 +55,23 @@ exports.deleteBox = functions.firestore
         });
     });
 
-exports.markBoxAsFound = functions.https.onCall((data, context) => {
+exports.createUserProfile = functions.https.onCall((data, context) => {
+    return userCollection.doc(data.id).set(Object.assign(data.user, {
+        active: true,
+        createdAt: new Date(),
+        lastLogin: new Date(),
+        userRole: playerRole,
+        foundBoxes: [],
+        openedBoxes: [],
+        coveredDistance: 0,
+        points: 0,
+        money: 0,
+        coins: 0,
+        level: 1
+    }));
+});
+
+/* exports.markBoxAsFound = functions.https.onCall((data, context) => {
     return new Promise((resolve, reject) => {
         firestore.collection('userProfile').doc(context.auth.uid).get().then(userProfile => {
             return firestore.collection('box').doc(data.id).update({
@@ -91,7 +99,7 @@ exports.markBoxAsFound = functions.https.onCall((data, context) => {
             reject(e);
         });
     });
-});
+}); */
 
 exports.deleteHint = functions.firestore
     .document('box/{uid}/hints/{id}').onDelete(snap => {
@@ -156,17 +164,3 @@ exports.processImages = functions.storage.object().onFinalize((object) => {
 
 
 });
-
-/* exports.addHintInGeoCollection = functions.firestore
-    .document('/box/{bid}/hints/{uid}').onCreate((snap, context) => {
-        const data = snap.data();
-        if (data.type === 1) {
-            return geoCollection.doc(snap.id).set({
-                coordinates: data.position,
-                range: data.distanceRange,
-                objectType: 3,
-                ref: snap.ref
-            });
-        }
-        return 0;
-    }); */
